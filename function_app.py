@@ -37,18 +37,44 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
         # Modo Automático: Si no se proporciona un ID, buscar uno en inglés de forma aleatoria.
         if not video_id:
             queries = [
-                'vlog', 'how to', 'gameplay', 'music', 'podcast', 'news', 'funny', 'tutorial', 
-                'review', 'documentary', 'day in the life', 'tech review', 'unboxing', 'reaction'
+                # Temas Tech & Gaming
+                'gameplay', 'tech review', 'unboxing', 'pc build', 'coding', 'software development', 'indie game', 'speedrun', 'playthrough', 'hardware test', 'smartphone review', 'VR headset', 'AI explained',
+                # Entretenimiento & Vlogs
+                'vlog', 'day in the life', 'documentary', 'funny fails', 'stand up comedy', 'live performance', 'magic trick', 'movie breakdown', 'tv show review', 'celebrity interview', 'conspiracy theory',
+                # Educación & Ciencia
+                'how to', 'tutorial', 'history explained', 'science experiment', 'space exploration', 'math problem', 'physics', 'learning English', 'language learning', 'psychology facts', 'biography',
+                # Música & Arte
+                'music video', 'acoustic cover', 'live concert', 'guitar tutorial', 'beat making', 'drawing timelapse', 'oil painting', 'digital art', 'photography tips', 'cinematography',
+                # Deportes & Salud
+                'fitness routine', 'home workout', 'yoga for beginners', 'bodybuilding', 'football highlights', 'basketball game', 'sports highlights', 'martial arts', 'running tips', 'calisthenics',
+                # Comida & Viajes
+                'street food', 'cooking recipe', 'baking', 'restaurant review', 'tasting snacks', 'travel vlog', 'backpacking', 'hidden gems', 'vacation vlog', 'tourist guide',
+                # Otros temas y combinaciones locas
+                'crypto news', 'stock market', 'finance tips', 'real estate', 'car review', 'restoration projects', 'woodworking', 'DIY', 'life hacks', 'camping', 'fishing', 'pet vlog', 'cute dogs', 'cat videos',
+                'asmr', 'mukbang', 'true crime', 'paranormal', 'urban exploration', 'abandoned places',
+                # Letras y fragmentos al azar para pescar cualquier cosa
+                'a', 'the', 'is', 'how', 'what', 'when', 'why', 'who', 'best', 'worst', 'top 10', 'vs', 'explained', 'full episode'
             ]
+            from datetime import timedelta, datetime
+
             random_query = random.choice(queries)
-            logging.info(f"Modo automático: Buscando vídeos para '{random_query}'...")
+
+            # Generar una fecha aleatoria desde 2025 hasta hoy
+            start_date = datetime(2025, 1, 1)
+            end_date = datetime.now()
+            delta = end_date - start_date
+            random_days = random.randrange(max(1, delta.days)) # Evitar error si ejecutamos el mismo día
+            random_published_after = (start_date + timedelta(days=random_days)).strftime('%Y-%m-%dT%H:%M:%SZ')
             
+            logging.info(f"Modo automático: Buscando '{random_query}' con fecha min {random_published_after}...")
+
             search_request = youtube.search().list(
                 part="snippet",
                 q=random_query,
                 type="video",
                 relevanceLanguage="en",
-                maxResults=10 # Traer solo 10 para no agotar cuota, luego escoger 1 al azar
+                publishedAfter=random_published_after,
+                maxResults=50 # Pedimos 50 y escogemos 1 al azar
             )
             search_response = search_request.execute()
             
@@ -69,11 +95,11 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
             maxResults=100
         )
         
-        while request is not None and len(comments_data) < 500:
+        while request is not None and len(comments_data) < 1500:
             response = request.execute()
             
             for item in response['items']:
-                if len(comments_data) >= 500:
+                if len(comments_data) >= 1500:
                     break
                 comment = item['snippet']['topLevelComment']['snippet']
                 comments_data.append({
@@ -84,7 +110,7 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
                 })
             
             # Paginación: si hay más comentarios, obtener la siguiente página
-            if 'nextPageToken' in response and len(comments_data) < 500:
+            if 'nextPageToken' in response and len(comments_data) < 1500:
                 request = youtube.commentThreads().list_next(
                     previous_request=request, 
                     previous_response=response
