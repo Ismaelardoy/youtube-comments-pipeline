@@ -2,13 +2,17 @@ import requests
 import time
 import logging
 import random
+import os
 
 # Configure basic logging to see progress in the console
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
-# TODO: Replace this URL with the actual URL of your Azure Function when deployed.
-# Example: "https://isma-youtube-tfm.azurewebsites.net/api/extract_youtube_comments?code=YourSecurityCode"
-AZURE_URL = "http://localhost:7071/api/extract_youtube_comments" 
+# When running inside Docker Compose, AZURE_FUNCTION_URL is set by docker-compose.yml
+# to point at the function container. Falls back to localhost for local development.
+AZURE_URL = os.environ.get(
+    "AZURE_FUNCTION_URL",
+    "http://localhost:7071/api/extract_youtube_comments"
+)
 
 TOTAL_REQUESTS = 2
 WAIT_TIME_SECONDS = 4
@@ -64,7 +68,7 @@ def start_launcher():
             payload = {
                 "theme": selected_theme,
                 "is_short": True,
-                "upload_to_cloud": True  # Keep False to save in local_data_lake/
+                "upload_to_cloud": False  # Keep False to save in local_data_lake/
             }
             
             logging.info(f"Request {i}/{TOTAL_REQUESTS}... Selected theme: '{selected_theme}'")

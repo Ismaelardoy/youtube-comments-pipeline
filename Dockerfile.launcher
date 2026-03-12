@@ -1,0 +1,14 @@
+# Lightweight Python image for the batch launcher script
+FROM python:3.11-slim
+
+# Set the working directory
+WORKDIR /app
+
+# Install the only dependency needed by the launcher
+RUN pip install --no-cache-dir requests
+
+# Copy the launcher script
+COPY batch_launcher.py .
+
+# Run the launcher when the container starts
+CMD ["python", "batch_launcher.py"]

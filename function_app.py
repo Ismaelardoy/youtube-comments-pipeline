@@ -10,7 +10,7 @@ from googleapiclient.discovery import build
 from azure.storage.blob import BlobServiceClient
 from datetime import datetime, timedelta
 
-app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 def clean_comment_text(text: str) -> str:
     if not text:

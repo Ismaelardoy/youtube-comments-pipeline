@@ -1,0 +1,39 @@
+services:
+
+  # ── 1. Azure Function (the core extraction engine) ──────────────────────────
+  azure-function:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "7071:80"   # Map host port 7071 -> container port 80 (production Azure image)
+    environment:
+      # Secrets loaded from your local .env file (never committed to Git)
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      # Required by the Azure Functions runtime
+      AzureWebJobsStorage: ${AZURE_STORAGE_CONNECTION_STRING}
+      FUNCTIONS_WORKER_RUNTIME: python
+    volumes:
+      # Mount local_data_lake/ so saved JSON files are accessible on the host
+      - ./local_data_lake:/home/site/wwwroot/local_data_lake
+    healthcheck:
+      # Any HTTP response from the function (even a 400) means it's alive.
+      test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://localhost:80/api/extract_youtube_comments"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── 2. Batch Launcher (triggers the function in a loop) ──────────────────────
+  batch-launcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.launcher
+    environment:
+      # Port 80 is the internal port the function uses inside Docker's network
+      AZURE_FUNCTION_URL: http://azure-function:80/api/extract_youtube_comments
+    depends_on:
+      azure-function:
+        condition: service_healthy
+
