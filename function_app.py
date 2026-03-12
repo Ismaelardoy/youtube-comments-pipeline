@@ -3,11 +3,29 @@ import logging
 import os
 import json
 import random
+import html
+import re
+import emoji
 from googleapiclient.discovery import build
 from azure.storage.blob import BlobServiceClient
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+
+def clean_comment_text(text: str) -> str:
+    if not text:
+        return ""
+    # Unescape HTML entities (e.g. &#39; to ')
+    text = html.unescape(text)
+    # Remove all HTML tags (like <br>, <a href...>)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    # Remove raw URL strings completely
+    text = re.sub(r'http[s]?://\S+', '', text)
+    # Remove emojis
+    text = emoji.replace_emoji(text, replace='')
+    # Clean up excess whitespace created by removal
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 @app.route(route="extract_youtube_comments")
 def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
@@ -18,133 +36,179 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
     
     if not youtube_api_key or not azure_conn_str:
         return func.HttpResponse(
-             "Faltan las variables de entorno 'YOUTUBE_API_KEY' o 'AZURE_STORAGE_CONNECTION_STRING'.",
+             "Missing environment variables 'YOUTUBE_API_KEY' or 'AZURE_STORAGE_CONNECTION_STRING'.",
              status_code=500
         )
 
     try:
         youtube = build('youtube', 'v3', developerKey=youtube_api_key)
 
-        # Get video_id from query string or body
+        # Get parameters from query string or body
         video_id = req.params.get('video_id')
-        if not video_id:
-            try:
-                req_body = req.get_json()
-                video_id = req_body.get('video_id')
-            except ValueError:
-                pass
+        theme = req.params.get('theme')
+        is_short_str = req.params.get('is_short')
+        upload_to_cloud_str = req.params.get('upload_to_cloud')
         
-        # Modo Automático: Si no se proporciona un ID, buscar uno en inglés de forma aleatoria.
+        try:
+            req_body = req.get_json()
+            if not video_id:
+                video_id = req_body.get('video_id')
+            if not theme:
+                theme = req_body.get('theme')
+            if is_short_str is None:
+                # Need to convert boolean to string for comparison safely if provided
+                is_short_val = req_body.get('is_short')
+                if is_short_val is not None:
+                    is_short_str = str(is_short_val)
+            if upload_to_cloud_str is None:
+                upload_to_cloud_val = req_body.get('upload_to_cloud')
+                if upload_to_cloud_val is not None:
+                    upload_to_cloud_str = str(upload_to_cloud_val)
+        except ValueError:
+            pass
+            
+        if is_short_str is None:
+            is_short_str = 'false'
+        if upload_to_cloud_str is None:
+            upload_to_cloud_str = 'true'
+            
+        is_short = is_short_str.lower() == 'true'
+        upload_to_cloud = upload_to_cloud_str.lower() == 'true'
+        
+        # Search Mode: If no video ID is provided, search using the theme
         if not video_id:
-            queries = [
-                # Temas Tech & Gaming
-                'gameplay', 'tech review', 'unboxing', 'pc build', 'coding', 'software development', 'indie game', 'speedrun', 'playthrough', 'hardware test', 'smartphone review', 'VR headset', 'AI explained',
-                # Entretenimiento & Vlogs
-                'vlog', 'day in the life', 'documentary', 'funny fails', 'stand up comedy', 'live performance', 'magic trick', 'movie breakdown', 'tv show review', 'celebrity interview', 'conspiracy theory',
-                # Educación & Ciencia
-                'how to', 'tutorial', 'history explained', 'science experiment', 'space exploration', 'math problem', 'physics', 'learning English', 'language learning', 'psychology facts', 'biography',
-                # Música & Arte
-                'music video', 'acoustic cover', 'live concert', 'guitar tutorial', 'beat making', 'drawing timelapse', 'oil painting', 'digital art', 'photography tips', 'cinematography',
-                # Deportes & Salud
-                'fitness routine', 'home workout', 'yoga for beginners', 'bodybuilding', 'football highlights', 'basketball game', 'sports highlights', 'martial arts', 'running tips', 'calisthenics',
-                # Comida & Viajes
-                'street food', 'cooking recipe', 'baking', 'restaurant review', 'tasting snacks', 'travel vlog', 'backpacking', 'hidden gems', 'vacation vlog', 'tourist guide',
-                # Otros temas y combinaciones locas
-                'crypto news', 'stock market', 'finance tips', 'real estate', 'car review', 'restoration projects', 'woodworking', 'DIY', 'life hacks', 'camping', 'fishing', 'pet vlog', 'cute dogs', 'cat videos',
-                'asmr', 'mukbang', 'true crime', 'paranormal', 'urban exploration', 'abandoned places',
-                # Letras y fragmentos al azar para pescar cualquier cosa
-                'a', 'the', 'is', 'how', 'what', 'when', 'why', 'who', 'best', 'worst', 'top 10', 'vs', 'explained', 'full episode'
-            ]
-            from datetime import timedelta, datetime
+            if not theme:
+                return func.HttpResponse(
+                     "Please provide a 'video_id' or a 'theme' parameter.",
+                     status_code=400
+                )
+            
+            search_query = f"{theme} #shorts" if is_short else theme
+            video_duration = "short" if is_short else "long"
 
-            random_query = random.choice(queries)
-
-            # Generar una fecha aleatoria desde 2025 hasta hoy
+            # Generate a random date from Jan 1, 2025 to today
             start_date = datetime(2025, 1, 1)
-            end_date = datetime.now()
+            end_date = datetime.utcnow()
             delta = end_date - start_date
-            random_days = random.randrange(max(1, delta.days)) # Evitar error si ejecutamos el mismo día
+            random_days = random.randrange(max(1, delta.days)) # Avoid error if executed same day
             random_published_after = (start_date + timedelta(days=random_days)).strftime('%Y-%m-%dT%H:%M:%SZ')
             
-            logging.info(f"Modo automático: Buscando '{random_query}' con fecha min {random_published_after}...")
+            logging.info(f"Search mode: Searching for '{search_query}' with min date {random_published_after} and duration '{video_duration}'...")
 
             search_request = youtube.search().list(
                 part="snippet",
-                q=random_query,
+                q=search_query,
                 type="video",
+                videoDuration=video_duration,
                 relevanceLanguage="en",
                 publishedAfter=random_published_after,
-                maxResults=50 # Pedimos 50 y escogemos 1 al azar
+                maxResults=50 # Request 50 and pick all available
             )
             search_response = search_request.execute()
             
+            video_ids = []
             if 'items' in search_response and search_response['items']:
-                random_item = random.choice(search_response['items'])
-                video_id = random_item['id']['videoId']
-                logging.info(f"Vídeo seleccionado aleatoriamente: {video_id}")
+                video_ids = [item['id']['videoId'] for item in search_response['items']]
+                logging.info(f"Obtained {len(video_ids)} videos from search.")
             else:
-                return func.HttpResponse("No se encontraron vídeos automáticos para probar.", status_code=404)
+                return func.HttpResponse("No videos found for the given theme.", status_code=404)
+        else:
+            # If a video ID was provided directly in the query
+            video_ids = [video_id]
 
-        # 1. Extraer comentarios de YouTube
-        # youtube ya se inicializó arriba con: youtube = build('youtube', 'v3', developerKey=youtube_api_key)
-
+        # 1. Extract comments iteratively
         comments_data = []
-        request = youtube.commentThreads().list(
-            part="snippet",
-            videoId=video_id,
-            maxResults=100
-        )
+        GLOBAL_LIMIT = 10000
         
-        while request is not None and len(comments_data) < 1500:
-            response = request.execute()
-            
-            for item in response['items']:
-                if len(comments_data) >= 1500:
-                    break
-                comment = item['snippet']['topLevelComment']['snippet']
-                comments_data.append({
-                    'author': comment.get('authorDisplayName'),
-                    'text': comment.get('textDisplay'), # Comentario
-                    'likeCount': comment.get('likeCount', 0), # Likes
-                    'publishedAt': comment.get('publishedAt') # Fecha de publicación
-                })
-            
-            # Paginación: si hay más comentarios, obtener la siguiente página
-            if 'nextPageToken' in response and len(comments_data) < 1500:
-                request = youtube.commentThreads().list_next(
-                    previous_request=request, 
-                    previous_response=response
-                )
-            else:
+        for v_id in video_ids:
+            if len(comments_data) >= GLOBAL_LIMIT:
                 break
                 
-        # 2. Guardar los datos en Azure Blob Storage
-        blob_service_client = BlobServiceClient.from_connection_string(azure_conn_str)
-        container_name = "youtube-comments" # Puedes cambiar el nombre del contenedor si lo necesitas
-        
-        # Crear contenedor si no existe
-        container_client = blob_service_client.get_container_client(container_name)
-        if not container_client.exists():
-            container_client.create_container()
+            logging.info(f"Extracting comments for video: {v_id}. Accumulated: {len(comments_data)}")
+            
+            try:
+                request = youtube.commentThreads().list(
+                    part="snippet",
+                    videoId=v_id,
+                    maxResults=100
+                )
+                
+                while request is not None and len(comments_data) < GLOBAL_LIMIT:
+                    response = request.execute()
+                    
+                    for item in response.get('items', []):
+                        if len(comments_data) >= GLOBAL_LIMIT:
+                            break
+                        comment = item['snippet']['topLevelComment']['snippet']
+                        
+                        raw_text = comment.get('textDisplay', '')
+                        cleaned_text = clean_comment_text(raw_text)
+                        
+                        if cleaned_text:
+                            comments_data.append({
+                                'videoId': v_id, # Add video ID to know data source
+                                'theme': theme,  # Include theme inside each comment
+                                'is_short': is_short, # Include is_short flag
+                                'author': comment.get('authorDisplayName'),
+                                'text': cleaned_text, # Cleaned comment text without HTML
+                                'likeCount': comment.get('likeCount', 0), # Likes
+                                'publishedAt': comment.get('publishedAt') # Published date
+                            })
+                    
+                    # Pagination: if there are more comments and limit not reached
+                    if 'nextPageToken' in response and len(comments_data) < GLOBAL_LIMIT:
+                        request = youtube.commentThreads().list_next(
+                            previous_request=request, 
+                            previous_response=response
+                        )
+                    else:
+                        break
+            except Exception as e:
+                logging.error(f"Error extracting comments from video {v_id}. Skipping to next. Error: {str(e)}")
+                continue
 
-        # Crear un nombre de archivo único
+        # 2. Save massive data
         timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
-        blob_name = f"comments_{video_id}_{timestamp}.json"
         
-        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+        if len(video_ids) > 1:
+            safe_theme = "".join([c if c.isalnum() else "_" for c in (theme or "random")])
+            file_name = f"megablob_{safe_theme}_{timestamp}.json"
+        else:
+            file_name = f"comments_{video_ids[0]}_{timestamp}.json"
         
-        # Convertir datos a JSON y subir al Blob Storage
         json_data = json.dumps(comments_data, ensure_ascii=False, indent=4)
-        blob_client.upload_blob(json_data, overwrite=True)
+
+        if upload_to_cloud:
+            # Save to Azure Blob Storage
+            blob_service_client = BlobServiceClient.from_connection_string(azure_conn_str)
+            container_name = "youtube-comments" 
+            
+            container_client = blob_service_client.get_container_client(container_name)
+            if not container_client.exists():
+                container_client.create_container()
+
+            blob_client = blob_service_client.get_blob_client(container=container_name, blob=file_name)
+            blob_client.upload_blob(json_data, overwrite=True)
+            save_message = f"Azure Blob Storage as '{file_name}'"
+        else:
+            # Save locally to local_data_lake/ directory
+            local_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'local_data_lake')
+            os.makedirs(local_dir, exist_ok=True)
+            file_path = os.path.join(local_dir, file_name)
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(json_data)
+            save_message = f"local file '{file_path}'"
 
         return func.HttpResponse(
-            f"Éxito: Se extrajeron {len(comments_data)} comentarios del vídeo '{video_id}' y se guardaron en '{blob_name}'.",
+            f"Success: Extracted {len(comments_data)} comments from {len(video_ids)} video(s) and saved to {save_message}.",
             status_code=200
         )
         
     except Exception as e:
-        logging.error(f"Error procesando el vídeo {video_id}: {str(e)}")
+        logging.error(f"Error processing the main request: {str(e)}")
         return func.HttpResponse(
-             f"Ha ocurrido un error: {str(e)}",
+             f"An error occurred: {str(e)}",
              status_code=500
         )
+
