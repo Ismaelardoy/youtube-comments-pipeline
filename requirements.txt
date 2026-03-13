@@ -1,5 +1,6 @@
 azure-functions
-google-api-python-client
-azure-storage-blob
-emoji
-
+google-api-python-client>=2.126.0
+azure-storage-blob>=12.19.0
+emoji>=2.11.0
+tenacity>=8.2.3
+typing_extensions>=4.9.0

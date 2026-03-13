@@ -1,37 +1,72 @@
-# YouTube Comments Pipeline 🎬
+<div align="center">
 
-> A fully reproducible, plug-and-play data pipeline for extracting and sanitizing YouTube comments at scale — built with Python, Azure Functions, and Docker.
+# 🎬 YouTube Comments Pipeline
 
-This project was developed as part of a Master's Thesis (TFM) to analyze **critical thinking levels** in YouTube comments across different content categories. By collecting comments from long-form and short-form videos, the resulting dataset can be used to measure cognitive engagement patterns depending on video theme and format.
+**A production-ready, fully containerised data pipeline for extracting, cleaning, and storing YouTube comments at scale.**
+
+Built with Python · Azure Functions · Docker · YouTube Data API v3
+
+[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
+[![Azure Functions](https://img.shields.io/badge/Azure-Functions-0078D4?logo=microsoft-azure)](https://azure.microsoft.com/en-us/products/functions)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://docker.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+</div>
+
+---
+
+## 📖 What Is This?
+
+This pipeline automatically searches YouTube for videos on specific topics, extracts their comments, cleans the text (removes HTML, URLs, emojis), and saves everything as structured JSON files — locally or in Azure Blob Storage.
+
+It was built as part of a Master's Thesis (TFM) to study **critical thinking patterns** in YouTube comments across different content categories (education vs. entertainment, shorts vs. long-form).
+
+## 🇪🇸 Guía Rápida (Español)
+
+Si solo quieres ponerlo en marcha rápido:
+
+1. **Configura**: Copia `.env.example` a `.env` y pon tu `YOUTUBE_API_KEY`.
+2. **Lanza**: `docker compose up --build` (la primera vez).
+3. **Controla**:
+   - Cambia `IS_SHORT=true` o `false` para elegir entre Shorts o vídeos largos.
+   - Cambia `UPLOAD_TO_CLOUD=true` o `false` para subir a Azure o guardar en PC.
+   - Edita `THEMES_LIST` para buscar tus propios temas.
+4. **Reinicia**: Usa `docker compose down && docker compose up` para empezar un lote limpio.
 
 ---
 
 ## ✨ Features
 
-- 🎯 **Theme-based extraction** — Randomly cycles through 14 macro-themes without repetition until all are covered
-- 🧹 **Automatic text sanitization** — Removes HTML tags, HTML entities, raw URLs, and emojis from comment text
-- 📦 **Dual storage modes** — Save locally to `local_data_lake/` or upload directly to Azure Blob Storage
-- 🔄 **Dual format support** — Extract from long-form videos or YouTube Shorts via a single flag
-- 🐳 **Docker-ready** — Fully containerized and reproducible with a single `docker-compose up` command
-- ☁️ **Azure-native** — Designed to deploy to Azure Functions with zero changes
+| Feature | Description |
+|---|---|
+| 🔍 **Smart search** | Finds videos by topic, picking a random date since Jan 2025 to maximise variety |
+| 🧹 **Text cleaning** | Strips HTML tags, entities, raw URLs, and emojis from every comment |
+| 📄 **Rich metadata** | Each comment includes author, like count, its own date, and the **video's publication date** |
+| 📦 **Dual storage** | Save JSON locally or upload to Azure Blob Storage — controlled by one flag |
+| 🔄 **Shorts & long-form** | One flag (`is_short`) switches between YouTube Shorts and regular videos |
+| 🔁 **Batch mode** | Cycles through 14 research themes without repetition |
+| 🛡️ **Retry logic** | Exponential back-off on YouTube API and Azure Storage failures |
+| 🐳 **One-command setup** | `docker compose up --build` starts everything |
+| ☁️ **Azure-ready** | Deploy to Azure Functions with zero code changes |
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────┐        HTTP POST (JSON payload)       ┌────────────────────────────────────┐
-│   batch_launcher.py         │  ────────────────────────────────────▶ │   function_app.py                  │
-│                             │                                         │   (Azure Function)                 │
-│  - Picks a random theme     │                                         │                                    │
-│  - Sends: theme,            │                                         │  1. Searches YouTube API for       │
-│    is_short, upload_to_cloud│                                         │     videos matching the theme      │
-│  - Loops N times            │                                         │  2. Extracts up to 10,000 comments │
-└─────────────────────────────┘                                         │  3. Cleans text (HTML, emojis...)  │
-                                                                        │  4. Saves to local_data_lake/      │
-                                                                        │     or Azure Blob Storage          │
-                                                                        └────────────────────────────────────┘
+┌───────────────────────────────┐    HTTP GET (JSON payload)    ┌──────────────────────────────────┐
+│     batch_launcher.py         │ ────────────────────────────▶ │     function_app.py              │
+│                               │                               │     (Azure Function)             │
+│  Picks a random theme         │                               │                                  │
+│  Loops N times                │                               │  1. Search YouTube for videos    │
+│  Retries on network errors    │                               │  2. Fetch video publish dates    │
+└───────────────────────────────┘                               │  3. Paginate through comments    │
+                                                                │  4. Clean & filter text          │
+                                                                │  5. Save JSON → local_data_lake/ │
+                                                                └──────────────────────────────────┘
 ```
+
+Both components run as separate Docker containers. The launcher waits for the Function to pass its health check before sending the first request. Output files appear **directly** in `local_data_lake/` on your machine in real time via a Docker bind-mount.
 
 ---
 
@@ -39,26 +74,41 @@ This project was developed as part of a Master's Thesis (TFM) to analyze **criti
 
 ```
 tfm-youtube-comments-pipeline/
-├── function_app.py          # Core Azure Function (YouTube extraction + sanitization)
-├── batch_launcher.py        # Script to trigger the function in batch mode
-├── requirements.txt         # Python dependencies for the Azure Function
-├── host.json                # Azure Functions runtime configuration
-├── Dockerfile               # Container image for the Azure Function
-├── Dockerfile.launcher      # Container image for the batch launcher
-├── docker-compose.yml       # Orchestrates both containers together
-├── .env.example             # Template for secrets (safe to commit)
-├── .env                     # Your real secrets (gitignored, never committed)
-└── local_data_lake/         # Output directory for local JSON files (gitignored)
+│
+├── src/                         ← Shared business logic
+│   ├── config/settings.py       ← All environment variables in one place
+│   ├── models/comment.py        ← CommentRecord data type
+│   ├── utils/text_cleaner.py    ← HTML / URL / emoji removal
+│   ├── utils/file_naming.py     ← JSON filename generator
+│   ├── services/youtube_service.py   ← YouTube API client + retries
+│   └── services/storage_service.py  ← Azure Blob + local file output
+│
+├── function_app.py              ← Azure Function HTTP trigger
+├── batch_launcher.py            ← Batch orchestrator
+│
+├── tests/smoke_tests.py         ← Quick sanity checks
+│
+├── Dockerfile                   ← Image for the Azure Function
+├── Dockerfile.launcher          ← Image for the batch launcher
+├── docker-compose.yml           ← Orchestrates both containers
+├── requirements.txt             ← Python dependencies
+├── host.json                    ← Azure Functions runtime config
+│
+├── .env.example                 ← ⬅ Copy this to .env and fill in your keys
+├── .env                         ← Your secrets (gitignored, never committed)
+└── local_data_lake/             ← Output folder — JSON files appear here (gitignored)
 ```
 
 ---
 
 ## 🚀 Quick Start (Docker — Recommended)
 
-### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
-- A [YouTube Data API v3](https://console.cloud.google.com/) key
-- *(Optional)* An Azure Storage connection string (only if `upload_to_cloud: True`)
+### What You'll Need
+
+1. **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** — installed and running
+2. **A YouTube Data API v3 key** — get one free at [console.cloud.google.com](https://console.cloud.google.com/)
+   - Create a project → Enable *YouTube Data API v3* → Credentials → Create API Key
+3. *(Optional)* An Azure Storage connection string — only if you want cloud upload
 
 ### Steps
 
@@ -72,171 +122,224 @@ cd tfm-youtube-comments-pipeline
 ```bash
 cp .env.example .env
 ```
-Open `.env` and fill in your values:
+Open `.env` and fill in at minimum:
 ```env
 YOUTUBE_API_KEY=AIza...your_key_here...
-AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
 ```
 
 **3. Launch everything**
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-That's it. Docker will:
-1. Build the Azure Function container
-2. Build the Batch Launcher container
-3. Wait until the Function is healthy
-4. Automatically start extracting comments
-
-JSON files will appear in `local_data_lake/` on your machine in real time.
+Docker will build both containers, wait for the Function to start, then run the launcher automatically. **JSON files appear in `local_data_lake/`** on your machine in real time.
 
 **4. Stop**
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ---
 
-## 🛠️ Manual Setup (without Docker)
+## 🛠️ Running Without Docker (Local Dev)
 
 ```bash
-# Create and activate a virtual environment
+# 1. Create and activate a virtual environment
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-source .venv/bin/activate     # macOS/Linux
+source .venv/bin/activate     # macOS / Linux
 
-# Install dependencies
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# Copy and fill in your settings
-cp local.settings.json.example local.settings.json  # edit with your API keys
+# 3. Set your environment variables
+$env:YOUTUBE_API_KEY = "your_key_here"   # PowerShell
+export YOUTUBE_API_KEY="your_key_here"   # macOS / Linux
 
-# Terminal 1 — Start the Azure Function locally
+# 4. Terminal 1 — Start the Azure Function locally
 func start
 
-# Terminal 2 — Run the batch launcher
+# 5. Terminal 2 — Run the batch launcher
 python batch_launcher.py
 ```
 
+> **Tip:** Install [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local) for the `func` command: `npm install -g azure-functions-core-tools@4`
+
 ---
 
-## ⚙️ Configuration
+## ⚙️ Configuration Reference
 
-### `batch_launcher.py` — Key Parameters
+All settings are read from **environment variables** — set them in your `.env` file.
 
-| Variable | Default | Description |
-|---|---|---|
-| `TOTAL_REQUESTS` | `3` | Number of extraction rounds to run |
-| `WAIT_TIME_SECONDS` | `4` | Cooldown between requests (seconds) |
-| `is_short` | `False` | `True` = YouTube Shorts only; `False` = Long-form videos only |
-| `upload_to_cloud` | `False` | `True` = upload JSON to Azure Blob Storage; `False` = save to `local_data_lake/` |
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `YOUTUBE_API_KEY` | ✅ Yes | — | Your YouTube Data API v3 key |
+| `AZURE_STORAGE_CONNECTION_STRING` | Only for cloud upload | — | Azure Blob Storage connection string |
+| `DATA_LAKE_PATH` | No | `./local_data_lake` | Output directory (inside container: `/data/local_data_lake`) |
+| `BLOB_CONTAINER_NAME` | No | `youtube-comments` | Azure Blob container name |
+| `GLOBAL_COMMENT_LIMIT` | No | `10000` | Max comments to collect per run |
+| `IS_SHORT` | No | `true` | `true` = Only Shorts \| `false` = Long-form videos |
+| `UPLOAD_TO_CLOUD` | No | `false` | `true` = Upload to Azure \| `false` = Save local JSON |
+| `TOTAL_REQUESTS` | No | `2` | Number of themed requests per batch |
+| `WAIT_TIME_SECONDS` | No | `4` | Seconds to wait between requests |
+| `THEMES_LIST` | No | *(14 defaults)* | Comma-separated list of search themes |
 
-```python
-payload = {
-    "theme": selected_theme,   # Randomly chosen from THEMES list
-    "is_short": False,         # False = long videos, True = Shorts
-    "upload_to_cloud": False   # False = local_data_lake/, True = Azure Blob
+---
+
+## 💡 Usage Tips & Docker Hygiene
+
+### ¿Cuándo usar `--build`?
+Las imágenes Docker representan un "snapshot" del código en un momento dado.
+
+- **Usa `docker compose up --build`** si has modificado:
+  - Cualquier archivo de código Python (`.py`)
+  - El archivo `requirements.txt` (nuevas librerías)
+  - El `Dockerfile` o `Dockerfile.launcher`
+
+- **Usa `docker compose up`** (sin build) si solo has modificado:
+  - El archivo `.env` (cambio de temas, límites, api keys, o activar/desactivar Shorts/Nube)
+
+### Reiniciar "de cero"
+Para limpiar el estado anterior y lanzar un lote totalmente nuevo:
+```bash
+docker compose down && docker compose up
+```
+Esta es la forma más segura de que todo empiece con la configuración fresca.
+
+## 📡 API Reference
+
+```
+GET /api/extract_youtube_comments
+```
+
+Parameters can be sent as a **query string** or **JSON body**:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `theme` | `string` | — | Search topic (e.g. `"science documentary"`) |
+| `video_id` | `string` | — | Extract comments from a specific video ID |
+| `is_short` | `bool` | `false` | `true` = YouTube Shorts only |
+| `upload_to_cloud` | `bool` | `true` | `false` = save locally; `true` = Azure Blob |
+
+> Provide either `theme` **or** `video_id` (not necessarily both).
+
+**Example:**
+```bash
+curl "http://localhost:7071/api/extract_youtube_comments" \
+  -H "Content-Type: application/json" \
+  -d '{"theme": "science documentary", "is_short": false, "upload_to_cloud": false}'
+```
+
+**Success response:**
+```json
+{
+  "status": "success",
+  "comments_extracted": 8432,
+  "videos_processed": 47,
+  "saved_to": "local file './local_data_lake/megablob_science_documentary_20250313120000.json'",
+  "filename": "megablob_science_documentary_20250313120000.json"
 }
 ```
 
-### Theme Rotation
-
-The launcher automatically **shuffles and cycles** through all 14 themes without repeating until the full list is exhausted:
-
-```python
-THEMES = [
-    # Impulsive / superficial engagement
-    'celebrity gossip', 'funny pranks', 'daily vlog',
-    'influencer apology', 'gaming drama', 'viral challenges',
-
-    # Informational / analytical engagement
-    'science documentary', 'history explained', 'video essay',
-    'philosophy lecture', 'personal finance', 'tech gadget review',
-
-    # Polarized / debate topics
-    'politics debate', 'conspiracy theory'
-]
-```
-
 ---
 
-## 🧪 How the Extraction Works
+## 📄 Output JSON Schema
 
-Each request to the Azure Function follows this pipeline:
-
-### 1. Video Discovery
-The function uses the YouTube Data API to search for videos published after **January 1st, 2025** matching the given theme. A random date within the range is chosen each time to maximize variety.
-
-```python
-search_request = youtube.search().list(
-    part="snippet",
-    q=search_query,
-    type="video",
-    videoDuration=video_duration,   # "long" or "short"
-    relevanceLanguage="en",
-    publishedAfter=random_published_after,
-    maxResults=50
-)
-```
-
-### 2. Comment Extraction
-Comments are paginated and collected from all found videos until a **global limit of 10,000 comments** is reached.
-
-### 3. Text Sanitization
-Every comment passes through `clean_comment_text()` before being saved:
-
-```python
-def clean_comment_text(text: str) -> str:
-    text = html.unescape(text)              # &#39; → '
-    text = re.sub(r'<[^>]+>', ' ', text)   # Remove <br>, <a href...>, etc.
-    text = re.sub(r'http[s]?://\S+', '', text)  # Remove URLs
-    text = emoji.replace_emoji(text, replace='') # Remove emojis
-    text = re.sub(r'\s+', ' ', text).strip()     # Normalize whitespace
-    return text
-```
-
-Empty comments (e.g. those that were *only* emojis or links) are discarded automatically.
-
-### 4. Output JSON Schema
-Each comment is saved with the following structure:
+Each file is a JSON array. Every element is one cleaned comment:
 
 ```json
 {
-    "videoId": "dQw4w9WgXcQ",
-    "theme": "music video",
-    "is_short": false,
-    "author": "@username",
-    "text": "This is the clean, sanitized comment text.",
-    "likeCount": 42,
-    "publishedAt": "2025-03-01T12:00:00Z"
+  "videoId": "dQw4w9WgXcQ",
+  "videoPublishedAt": "2025-01-15T18:00:00Z",
+  "theme": "science documentary",
+  "is_short": false,
+  "author": "@username",
+  "text": "This is the clean, sanitized comment text.",
+  "likeCount": 42,
+  "publishedAt": "2025-03-01T12:00:00Z"
 }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `videoId` | `string` | YouTube video ID |
+| `videoPublishedAt` | `string \| null` | When the **video** was published (ISO-8601) |
+| `theme` | `string \| null` | Search theme used to find the video |
+| `is_short` | `boolean` | Whether the video is a YouTube Short |
+| `author` | `string \| null` | Comment author display name |
+| `text` | `string` | Cleaned comment text |
+| `likeCount` | `integer` | Likes on the comment |
+| `publishedAt` | `string \| null` | When the **comment** was posted (ISO-8601) |
+
+---
+
+## 🎯 Theme Catalogue
+
+The launcher shuffles and exhausts all 14 themes before repeating:
+
+```
+Superficial / Impulsive          Informational / Analytical       Polarised / Debate
+──────────────────────────────   ─────────────────────────────   ──────────────────
+celebrity gossip                 science documentary             politics debate
+funny pranks                     history explained               conspiracy theory
+daily vlog                       video essay
+influencer apology               philosophy lecture
+gaming drama                     personal finance
+viral challenges                 tech gadget review
 ```
 
 ---
 
 ## ☁️ Deploying to Azure
 
-When you're ready to run this in the cloud, set `upload_to_cloud: True` in `batch_launcher.py` and deploy the Function:
+**1.** Set `upload_to_cloud` to `true` (via your `.env` or request payload).
 
+**2.** Deploy the Function:
 ```bash
 func azure functionapp publish <your-function-app-name>
 ```
 
-Make sure your Azure Function App has the following Application Settings configured:
-- `YOUTUBE_API_KEY`
-- `AZURE_STORAGE_CONNECTION_STRING`
+**3.** Add these Application Settings in the Azure Portal:
+
+| Setting | Value |
+|---|---|
+| `YOUTUBE_API_KEY` | Your API key |
+| `AZURE_STORAGE_CONNECTION_STRING` | Your storage connection string |
+| `GLOBAL_COMMENT_LIMIT` | `10000` |
+
+---
+
+## 🧪 Smoke Tests
+
+```bash
+# Windows
+.venv\Scripts\python.exe tests\smoke_tests.py
+
+# macOS / Linux
+python tests/smoke_tests.py
+```
+
+Expected output:
+```
+text_cleaner .............. PASSED
+file_naming ............... PASSED
+Settings .................. PASSED
+
+All smoke tests PASSED.
+```
 
 ---
 
 ## 📦 Dependencies
 
-| Package | Purpose |
-|---|---|
-| `azure-functions` | Azure Functions runtime |
-| `google-api-python-client` | YouTube Data API v3 |
-| `azure-storage-blob` | Azure Blob Storage client |
-| `emoji` | Emoji detection and removal |
+| Package | Version | Purpose |
+|---|---|---|
+| `azure-functions` | latest | Azure Functions runtime |
+| `google-api-python-client` | ≥ 2.126 | YouTube Data API v3 |
+| `azure-storage-blob` | ≥ 12.19 | Azure Blob Storage client |
+| `emoji` | ≥ 2.11 | Emoji removal |
+| `tenacity` | ≥ 8.2 | Retry logic with exponential back-off |
+| `typing_extensions` | ≥ 4.9 | TypedDict support |
 
 ---
 

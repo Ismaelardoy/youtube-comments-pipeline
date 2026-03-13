@@ -4,10 +4,15 @@ FROM python:3.11-slim
 # Set the working directory
 WORKDIR /app
 
-# Install the only dependency needed by the launcher
-RUN pip install --no-cache-dir requests
+# Install all required dependencies (including tenacity and typing_extensions
+# which are shared with the function via src.config.settings)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the launcher script
+# Copy the shared business-logic package (needed for src.config.settings)
+COPY src/ ./src/
+
+# Copy the launcher entrypoint
 COPY batch_launcher.py .
 
 # Run the launcher when the container starts
