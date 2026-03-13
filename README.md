@@ -15,11 +15,9 @@ Built with Python · Azure Functions · Docker · YouTube Data API v3
 
 ---
 
-## 📖 What Is This?
-
 This pipeline automatically searches YouTube for videos on specific topics, extracts their comments, cleans the text (removes HTML, URLs, emojis), and saves everything as structured JSON files — locally or in Azure Blob Storage.
 
-It was built as part of a Master's Thesis (TFM) to study **critical thinking patterns** in YouTube comments across different content categories (education vs. entertainment, shorts vs. long-form).
+It was designed to study **critical thinking patterns** in YouTube comments across different content categories (education vs. entertainment, shorts vs. long-form).
 
 ## ⚡ Quick Guide
 
@@ -71,7 +69,7 @@ Both components run as separate Docker containers. The launcher waits for the Fu
 ## 📁 Project Structure
 
 ```
-tfm-youtube-comments-pipeline/
+youtube-comments-pipeline/
 │
 ├── src/                         ← Shared business logic
 │   ├── config/settings.py       ← All environment variables in one place
@@ -112,8 +110,8 @@ tfm-youtube-comments-pipeline/
 
 **1. Clone the repository**
 ```bash
-git clone https://github.com/Ismaelardoy/tfm-youtube-comments-pipeline.git
-cd tfm-youtube-comments-pipeline
+git clone https://github.com/Ismaelardoy/youtube-comments-pipeline.git
+cd youtube-comments-pipeline
 ```
 
 **2. Configure your secrets**
