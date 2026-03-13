@@ -21,17 +21,15 @@ This pipeline automatically searches YouTube for videos on specific topics, extr
 
 It was built as part of a Master's Thesis (TFM) to study **critical thinking patterns** in YouTube comments across different content categories (education vs. entertainment, shorts vs. long-form).
 
-## 🇪🇸 Guía Rápida (Español)
+## ⚡ Quick Guide
 
-Si solo quieres ponerlo en marcha rápido:
-
-1. **Configura**: Copia `.env.example` a `.env` y pon tu `YOUTUBE_API_KEY`.
-2. **Lanza**: `docker compose up --build` (la primera vez).
-3. **Controla**:
-   - Cambia `IS_SHORT=true` o `false` para elegir entre Shorts o vídeos largos.
-   - Cambia `UPLOAD_TO_CLOUD=true` o `false` para subir a Azure o guardar en PC.
-   - Edita `THEMES_LIST` para buscar tus propios temas.
-4. **Reinicia**: Usa `docker compose down && docker compose up` para empezar un lote limpio.
+1. **Configure**: Copy `.env.example` to `.env` and enter your `YOUTUBE_API_KEY`.
+2. **Launch**: `docker compose up --build` (mandatory for the first run).
+3. **Control**:
+   - Toggle `IS_SHORT=true` or `false` to switch between Shorts or long-form videos.
+   - Toggle `UPLOAD_TO_CLOUD=true` or `false` for Azure upload vs local storage.
+   - Edit `THEMES_LIST` to use your own search terms.
+4. **Clean Restart**: Use `docker compose down && docker compose up` to start a fresh batch.
 
 ---
 
@@ -184,27 +182,25 @@ All settings are read from **environment variables** — set them in your `.env`
 | `WAIT_TIME_SECONDS` | No | `4` | Seconds to wait between requests |
 | `THEMES_LIST` | No | *(14 defaults)* | Comma-separated list of search themes |
 
----
-
 ## 💡 Usage Tips & Docker Hygiene
 
-### ¿Cuándo usar `--build`?
-Las imágenes Docker representan un "snapshot" del código en un momento dado.
+### When to use `--build`?
+Docker images represent a "snapshot" of the code at a specific time.
 
-- **Usa `docker compose up --build`** si has modificado:
-  - Cualquier archivo de código Python (`.py`)
-  - El archivo `requirements.txt` (nuevas librerías)
-  - El `Dockerfile` o `Dockerfile.launcher`
+- **Use `docker compose up --build`** if you modified:
+  - Any Python code file (`.py`)
+  - The `requirements.txt` file (new dependencies)
+  - Any `Dockerfile`
 
-- **Usa `docker compose up`** (sin build) si solo has modificado:
-  - El archivo `.env` (cambio de temas, límites, api keys, o activar/desactivar Shorts/Nube)
+- **Use `docker compose up`** (without build) if you only modified:
+  - The `.env` file (themes, keys, limits, or Shorts/Cloud toggles)
 
-### Reiniciar "de cero"
-Para limpiar el estado anterior y lanzar un lote totalmente nuevo:
+### Fresh Start
+To clear old states and start a completely new batch:
 ```bash
 docker compose down && docker compose up
 ```
-Esta es la forma más segura de que todo empiece con la configuración fresca.
+This is the safest way to ensure a new run starts with the latest configuration and clean logs.
 
 ## 📡 API Reference
 
