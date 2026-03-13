@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,10 @@ class Settings:
     total_requests: int
     wait_time_seconds: int
 
+    # ── Search date range tuning ──────────────────────────────────────────────
+    search_start_date: Optional[str]
+    search_end_date: Optional[str]
+
     # ── Shared catalogue ──────────────────────────────────────────────────────
     themes: list[str] = field(default_factory=lambda: list(THEMES))
 
@@ -175,5 +180,7 @@ def load_settings() -> Settings:
         azure_function_url=azure_function_url,
         total_requests=total_requests,
         wait_time_seconds=wait_time_seconds,
+        search_start_date=_optional("SEARCH_START_DATE", ""),
+        search_end_date=_optional("SEARCH_END_DATE", ""),
         themes=_parse_themes(),
     )

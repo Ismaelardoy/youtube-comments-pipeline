@@ -23,6 +23,8 @@ services:
       THEMES_LIST: ${THEMES_LIST:-}
       IS_SHORT: ${IS_SHORT:-true}
       UPLOAD_TO_CLOUD: ${UPLOAD_TO_CLOUD:-false}
+      SEARCH_START_DATE: ${SEARCH_START_DATE:-}
+      SEARCH_END_DATE: ${SEARCH_END_DATE:-}
     volumes:
       # Bind-mount: HOST_DATA_LAKE_PATH (default: ./local_data_lake) → /data/local_data_lake
       # Files written by the function appear directly in your project folder.
@@ -52,6 +54,8 @@ services:
       THEMES_LIST: ${THEMES_LIST:-}
       IS_SHORT: ${IS_SHORT:-true}
       UPLOAD_TO_CLOUD: ${UPLOAD_TO_CLOUD:-false}
+      SEARCH_START_DATE: ${SEARCH_START_DATE:-}
+      SEARCH_END_DATE: ${SEARCH_END_DATE:-}
     depends_on:
       azure-function:
         condition: service_healthy

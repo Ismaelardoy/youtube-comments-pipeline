@@ -114,6 +114,8 @@ def start_launcher() -> None:
             "theme": selected_theme,
             "is_short": settings.is_short,
             "upload_to_cloud": settings.upload_to_cloud,
+            "search_start_date": settings.search_start_date,
+            "search_end_date": settings.search_end_date,
         }
 
         logger.info(

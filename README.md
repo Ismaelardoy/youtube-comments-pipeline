@@ -178,6 +178,8 @@ All settings are read from **environment variables** — set them in your `.env`
 | `GLOBAL_COMMENT_LIMIT` | No | `10000` | Max comments to collect per run |
 | `IS_SHORT` | No | `true` | `true` = Only Shorts \| `false` = Long-form videos |
 | `UPLOAD_TO_CLOUD` | No | `false` | `true` = Upload to Azure \| `false` = Save local JSON |
+| `SEARCH_START_DATE` | No | *(random)* | ISO-8601 start date (e.g. `2025-01-01T00:00:00Z`) |
+| `SEARCH_END_DATE` | No | `now` | ISO-8601 end date |
 | `TOTAL_REQUESTS` | No | `2` | Number of themed requests per batch |
 | `WAIT_TIME_SECONDS` | No | `4` | Seconds to wait between requests |
 | `THEMES_LIST` | No | *(14 defaults)* | Comma-separated list of search themes |

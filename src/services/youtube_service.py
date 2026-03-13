@@ -84,6 +84,7 @@ class YouTubeService:
         theme: str,
         is_short: bool,
         published_after: Optional[str] = None,
+        published_before: Optional[str] = None,
     ) -> list[str]:
         """Search YouTube for videos matching *theme* and return their IDs.
 
@@ -104,21 +105,28 @@ class YouTubeService:
         """
         if published_after is None:
             published_after = self._random_published_after()
+        else:
+            published_after = self._ensure_rfc3339(published_after)
+
+        if published_before:
+            published_before = self._ensure_rfc3339(published_before)
 
         search_query = f"{theme} #shorts" if is_short else theme
         video_duration = "short" if is_short else "long"
 
         logger.info(
-            "Searching YouTube | query=%r | duration=%s | published_after=%s",
+            "Searching YouTube | query=%r | duration=%s | range=[%s, %s]",
             search_query,
             video_duration,
             published_after,
+            published_before or "now",
         )
 
         response = self._execute_search(
             q=search_query,
             video_duration=video_duration,
             published_after=published_after,
+            published_before=published_before,
         )
 
         items = response.get("items", [])
@@ -228,17 +236,22 @@ class YouTubeService:
         q: str,
         video_duration: str,
         published_after: str,
+        published_before: Optional[str] = None,
     ) -> dict:
         """Execute a YouTube search.list call with retry logic."""
-        request = self._client.search().list(
-            part="snippet",
-            q=q,
-            type="video",
-            videoDuration=video_duration,
-            relevanceLanguage="en",
-            publishedAfter=published_after,
-            maxResults=self._MAX_SEARCH_RESULTS,
-        )
+        params = {
+            "part": "snippet",
+            "q": q,
+            "type": "video",
+            "videoDuration": video_duration,
+            "relevanceLanguage": "en",
+            "publishedAfter": published_after,
+            "maxResults": self._MAX_SEARCH_RESULTS,
+        }
+        if published_before:
+            params["publishedBefore"] = published_before
+
+        request = self._client.search().list(**params)
         return request.execute()
 
     def _collect_video_comments(
@@ -304,6 +317,17 @@ class YouTubeService:
             .list(part="snippet", id=",".join(ids))
             .execute()
         )
+
+    @classmethod
+    def _ensure_rfc3339(cls, date_str: str) -> str:
+        """Ensure the date string is RFC 3339 compliant for the YouTube API.
+        
+        If only a date (YYYY-MM-DD) is provided, appends T00:00:00Z.
+        """
+        date_str = date_str.strip()
+        if len(date_str) == 10 and "-" in date_str and "T" not in date_str:
+            return f"{date_str}T00:00:00Z"
+        return date_str
 
     @classmethod
     def _random_published_after(cls) -> str:

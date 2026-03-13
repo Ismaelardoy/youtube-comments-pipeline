@@ -92,10 +92,12 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
         directly without a search step.
     theme : str, optional
         Search theme used to find videos when *video_id* is omitted.
-    is_short : bool, optional
-        Whether to restrict the search to YouTube Shorts.  Default: False.
     upload_to_cloud : bool, optional
         When True, upload the result to Azure Blob Storage.  Default: True.
+    search_start_date : str, optional
+        ISO-8601 start date for the search. Default: from settings or random.
+    search_end_date : str, optional
+        ISO-8601 end date for the search. Default: from settings or None.
     """
     logger.info("extract_youtube_comments triggered | method=%s", req.method)
 
@@ -104,13 +106,17 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
     theme = _get_param(req, "theme")
     is_short = _parse_bool(_get_param(req, "is_short"), default=False)
     upload_to_cloud = _parse_bool(_get_param(req, "upload_to_cloud"), default=True)
+    search_start_date = _get_param(req, "search_start_date") or _settings.search_start_date
+    search_end_date = _get_param(req, "search_end_date") or _settings.search_end_date
 
     logger.info(
-        "Request params | video_id=%s | theme=%s | is_short=%s | upload_to_cloud=%s",
+        "Request params | video_id=%s | theme=%s | is_short=%s | upload_to_cloud=%s | search_range=[%s, %s]",
         video_id,
         theme,
         is_short,
         upload_to_cloud,
+        search_start_date,
+        search_end_date,
     )
 
     # ── 2. Input validation ──────────────────────────────────────────────────
@@ -145,6 +151,8 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
             video_ids = yt_service.search_videos(
                 theme=theme,  # type: ignore[arg-type]
                 is_short=is_short,
+                published_after=search_start_date or None,
+                published_before=search_end_date or None,
             )
             if not video_ids:
                 return _json_response(
