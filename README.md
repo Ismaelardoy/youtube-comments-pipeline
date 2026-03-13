@@ -17,7 +17,7 @@ Built with Python · Azure Functions · Docker · YouTube Data API v3
 
 This pipeline automatically searches YouTube for videos on specific topics, extracts their comments, cleans the text (removes HTML, URLs, emojis), and saves everything as structured JSON files — locally or in Azure Blob Storage.
 
-It was designed to study **critical thinking patterns** in YouTube comments across different content categories (education vs. entertainment, shorts vs. long-form).
+It is a versatile engine for building high-fidelity datasets from YouTube, enabling deep analysis of audience engagement, sentiment, and trends across any category — from viral Shorts to long-form videos in any niche.
 
 ## ⚡ Quick Guide
 
