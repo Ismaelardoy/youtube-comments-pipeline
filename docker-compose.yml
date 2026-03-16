@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "7071:80"   # Host port 7071 → container port 80 (Azure Functions mcr image)
+    env_file:
+      - .env
     environment:
       # ── Secrets (loaded from .env — never committed to Git) ───────────────
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
@@ -41,6 +43,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.launcher
+    env_file:
+      - .env
     environment:
       # Port 80 is the internal port the function uses inside Docker's network.
       AZURE_FUNCTION_URL: http://azure-function:80/api/extract_youtube_comments

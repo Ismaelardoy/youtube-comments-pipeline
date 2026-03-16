@@ -339,6 +339,32 @@ All smoke tests PASSED.
 
 ---
 
-## 📄 License
 
+---
+
+## 🛠️ Troubleshooting & Portability
+
+### 🍎 Apple Silicon (M1/M2/M3)
+The official Azure Functions Python image might not have native ARM64 support for local development in some environments. If you see an architecture error:
+1. Ensure Docker Desktop is set to use **VirtioFS** or **gRPC FUSE**.
+2. If the function fails to start, try forcing the x86 architecture in your `docker-compose.yml` (though this project aims to be architecture-neutral):
+   ```yaml
+   platform: linux/amd64
+   ```
+
+### 🐧 Linux Permissions
+On Linux, files created by Docker containers are often owned by `root`. If you cannot edit the JSON files in `local_data_lake/`:
+```bash
+sudo chown -R $USER:$USER local_data_lake/
+```
+
+### 🔑 Environment Variables
+Docker Compose now explicitly loads your `.env` file. Ensure you have copied `.env.example` to `.env` before running `docker compose up`. If variables aren't reflecting:
+1. Run `docker compose down`.
+2. Edit `.env`.
+3. Run `docker compose up --build`.
+
+---
+
+## 📄 License
 MIT License — see [LICENSE](LICENSE) for details.
