@@ -43,6 +43,9 @@ It is a versatile engine for building high-fidelity datasets from YouTube, enabl
 | 🔁 **Batch mode** | Cycles through 14 research themes without repetition |
 | 🛡️ **Retry logic** | Exponential back-off on YouTube API and Azure Storage failures |
 | 🐳 **One-command setup** | `docker compose up --build` starts everything |
+| 🌍 **Multi-language** | Filter search results by language using `YOUTUBE_LANGUAGE` |
+| 🎯 **Field selection** | Choose exactly which fields to include in the JSON via `OUTPUT_FIELDS` |
+| 🔄 **Stateful cloud** | Sync checkpoints to Azure Blob to avoid duplicate data in the cloud |
 | ☁️ **Azure-ready** | Deploy to Azure Functions with zero code changes |
 
 ---
@@ -184,6 +187,8 @@ All settings are read from **environment variables** — set them in your `.env`
 | `TOTAL_REQUESTS` | No | `2` | Number of themed requests per batch |
 | `WAIT_TIME_SECONDS` | No | `4` | Seconds to wait between requests |
 | `THEMES_LIST` | No | *(14 defaults)* | Comma-separated list of search themes |
+| `YOUTUBE_LANGUAGE` | No | `en` | ISO 639-1 language code for search results (en, es, fr, etc.) |
+| `OUTPUT_FIELDS` | No | *(All fields)* | Comma-separated list of fields to include in output JSON |
 
 ## 💡 Usage Tips & Docker Hygiene
 
@@ -273,7 +278,10 @@ Each file is a JSON array. Every element is one cleaned comment:
 | `author` | `string \| null` | Comment author display name |
 | `text` | `string` | Cleaned comment text |
 | `likeCount` | `integer` | Likes on the comment |
-| `publishedAt` | `string \| null` | When the **comment** was posted (ISO-8601) |
+| `publishedAt` | `string | null` | When the **comment** was posted (ISO-8601) |
+
+> [!TIP]
+> You can customise exactly which of these fields appear in your output (or reduce file size) by setting the `OUTPUT_FIELDS` environment variable in your `.env` file. Any combination of the keys listed above is valid. Default is to include all fields.
 
 ---
 

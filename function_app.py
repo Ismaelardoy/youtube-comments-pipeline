@@ -144,6 +144,7 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
         api_key=_settings.youtube_api_key,
         global_limit=_settings.global_comment_limit,
         max_search_results=max_search_results,
+        language=_settings.youtube_language,
     )
     storage_service = StorageService(
         azure_connection_string=_settings.azure_storage_connection_string,
@@ -153,6 +154,7 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
     checkpoint_service = CheckpointService(
         data_lake_path=_settings.data_lake_path,
         filename=_settings.checkpoint_file_name,
+        storage_service=storage_service if upload_to_cloud else None,
     )
 
     try:
@@ -183,6 +185,16 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
 
         # ── 6. Update and save checkpoints ───────────────────────────────────
         checkpoint_service.save_checkpoints()
+
+        # ── 6b. Apply output-fields filter ───────────────────────────────────
+        # Keep only the keys listed in OUTPUT_FIELDS.  If the setting equals
+        # the full default list this is a no-op identity mapping, so the
+        # behaviour is identical to the original code when the var is unset.
+        output_fields = _settings.output_fields
+        comments = [
+            {k: c[k] for k in output_fields if k in c}
+            for c in comments
+        ]
 
         # ── 7. Persist results ───────────────────────────────────────────────
         timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")

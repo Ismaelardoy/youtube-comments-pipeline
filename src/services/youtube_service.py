@@ -69,12 +69,23 @@ class YouTubeService:
     _MAX_SEARCH_RESULTS = 50
     _MAX_COMMENTS_PER_PAGE = 100
 
-    def __init__(self, api_key: str, global_limit: int = 10_000, max_search_results: int = 50) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        global_limit: int = 10_000,
+        max_search_results: int = 50,
+        language: str = "en",
+    ) -> None:
         self._api_key = api_key
         self._global_limit = global_limit
         self._max_search_results = max_search_results
+        self._language = language
         self._client = build("youtube", "v3", developerKey=api_key)
-        logger.info("YouTubeService initialised | global_limit=%d", global_limit)
+        logger.info(
+            "YouTubeService initialised | global_limit=%d | language=%s",
+            global_limit,
+            language,
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -267,7 +278,7 @@ class YouTubeService:
             "q": q,
             "type": "video",
             "videoDuration": video_duration,
-            "relevanceLanguage": "en",
+            "relevanceLanguage": self._language,
             "publishedAfter": published_after,
             "maxResults": min(50, self._max_search_results), # API maximum per page
         }

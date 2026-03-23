@@ -50,6 +50,23 @@ DEFAULT_THEMES: list[str] = [
 THEMES = DEFAULT_THEMES
 
 
+# ---------------------------------------------------------------------------
+# Default output fields — the full set of keys that CommentRecord can contain.
+# Used when OUTPUT_FIELDS env var is not set.
+# ---------------------------------------------------------------------------
+DEFAULT_OUTPUT_FIELDS: list[str] = [
+    "comment_id",
+    "videoId",
+    "videoPublishedAt",
+    "theme",
+    "is_short",
+    "author",
+    "text",
+    "likeCount",
+    "publishedAt",
+]
+
+
 def _require(name: str) -> str:
     """Return the value of *name* from the environment; raise if missing/empty."""
     value = os.environ.get(name, "").strip()
@@ -93,6 +110,41 @@ def _parse_themes() -> list[str]:
     return list(DEFAULT_THEMES)
 
 
+def _parse_output_fields() -> list[str]:
+    """Return the list of output fields to include in each comment record.
+
+    Reads ``OUTPUT_FIELDS`` from the environment as a comma-separated string,
+    e.g.::
+
+        OUTPUT_FIELDS=comment_id,author,text,likeCount
+
+    Each entry is stripped of whitespace.  Entries that do not match any key
+    in :data:`DEFAULT_OUTPUT_FIELDS` are silently ignored so that typos never
+    cause a ``KeyError`` at runtime.
+
+    If the variable is absent or resolves to an empty list,
+    :data:`DEFAULT_OUTPUT_FIELDS` is returned as-is.
+
+    Returns:
+        A non-empty list of field-name strings (subset of DEFAULT_OUTPUT_FIELDS).
+    """
+    raw = os.environ.get("OUTPUT_FIELDS", "").strip()
+    if raw:
+        requested = [f.strip() for f in raw.split(",") if f.strip()]
+        # Keep only fields that actually exist in the extractor output
+        valid = [f for f in requested if f in DEFAULT_OUTPUT_FIELDS]
+        if valid:
+            logger.info("OUTPUT_FIELDS → keeping %d field(s): %s", len(valid), valid)
+            return valid
+        logger.warning(
+            "OUTPUT_FIELDS contained no valid field names (%s) — using all defaults.",
+            requested,
+        )
+
+    logger.info("OUTPUT_FIELDS not set — using all %d default fields", len(DEFAULT_OUTPUT_FIELDS))
+    return list(DEFAULT_OUTPUT_FIELDS)
+
+
 def _parse_bool(name: str, default: bool) -> bool:
     """Parse a boolean environment variable."""
     value = os.environ.get(name, "").lower().strip()
@@ -128,6 +180,7 @@ class Settings:
     global_comment_limit: int
     is_short: bool
     max_search_results_per_theme: int
+    youtube_language: str
 
     # ── Batch-launcher tuning ─────────────────────────────────────────────────
     azure_function_url: str
@@ -138,7 +191,8 @@ class Settings:
     search_start_date: Optional[str]
     search_end_date: Optional[str]
 
-    # ── Shared catalogue ──────────────────────────────────────────────────────
+    # ── Fields with defaults (must come after non-default fields) ─────────────
+    output_fields: list[str] = field(default_factory=lambda: list(DEFAULT_OUTPUT_FIELDS))
     themes: list[str] = field(default_factory=lambda: list(THEMES))
 
 
@@ -184,6 +238,8 @@ def load_settings() -> Settings:
         global_comment_limit=global_comment_limit,
         is_short=_parse_bool("IS_SHORT", True),
         max_search_results_per_theme=int(_optional("MAX_SEARCH_RESULTS_PER_THEME", "50")),
+        youtube_language=_optional("YOUTUBE_LANGUAGE", "en"),
+        output_fields=_parse_output_fields(),
         azure_function_url=azure_function_url,
         total_requests=total_requests,
         wait_time_seconds=wait_time_seconds,

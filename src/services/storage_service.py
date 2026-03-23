@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Sequence
+from typing import Sequence, Optional
 
 from tenacity import (
     retry,
@@ -104,11 +104,23 @@ class StorageService:
             )
 
         json_data = self._serialise(comments)
-        self._upload_blob(json_data=json_data, filename=filename)
+        self._upload_blob(data=json_data, filename=filename)
 
         path = f"{self._container_name}/{filename}"
         logger.info("Saved to Azure Blob Storage | blob=%s | records=%d", path, len(comments))
         return f"Azure Blob Storage as '{path}'"
+
+    def upload_raw(self, data: str, filename: str) -> None:
+        """Upload any string *data* to Azure Blob Storage as *filename*."""
+        if not self._azure_connection_string:
+            raise EnvironmentError("AZURE_STORAGE_CONNECTION_STRING not set.")
+        self._upload_blob(data=data, filename=filename)
+
+    def download_from_cloud(self, filename: str) -> Optional[str]:
+        """Download a blob as a UTF-8 string. Returns None if not found."""
+        if not self._azure_connection_string:
+            return None
+        return self._download_blob(filename)
 
     def save_locally(
         self,
@@ -150,8 +162,8 @@ class StorageService:
         return json.dumps(list(comments), ensure_ascii=False, indent=self._JSON_INDENT)
 
     @_azure_retry
-    def _upload_blob(self, json_data: str, filename: str) -> None:
-        """Upload *json_data* as a blob, creating the container if absent."""
+    def _upload_blob(self, data: str, filename: str) -> None:
+        """Upload *data* as a blob, creating the container if absent."""
         blob_service_client = BlobServiceClient.from_connection_string(
             self._azure_connection_string
         )
@@ -164,4 +176,20 @@ class StorageService:
         blob_client = blob_service_client.get_blob_client(
             container=self._container_name, blob=filename
         )
-        blob_client.upload_blob(json_data, overwrite=True)
+        blob_client.upload_blob(data, overwrite=True)
+
+    @_azure_retry
+    def _download_blob(self, filename: str) -> Optional[str]:
+        """Download a blob, returning None if the container/blob is missing."""
+        blob_service_client = BlobServiceClient.from_connection_string(
+            self._azure_connection_string
+        )
+        container_client = blob_service_client.get_container_client(self._container_name)
+        if not container_client.exists():
+            return None
+
+        blob_client = container_client.get_blob_client(filename)
+        if not blob_client.exists():
+            return None
+
+        return blob_client.download_blob().readall().decode("utf-8")

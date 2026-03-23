@@ -1,5 +1,5 @@
-# Lightweight Python image for the batch launcher script
-FROM python:3.11-slim
+# Use the same base image as the function to ensure local availability
+FROM mcr.microsoft.com/azure-functions/python:4-python3.11
 
 # Set the working directory
 WORKDIR /app
