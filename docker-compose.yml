@@ -62,7 +62,9 @@ services:
       SEARCH_START_DATE: ${SEARCH_START_DATE:-}
       SEARCH_END_DATE: ${SEARCH_END_DATE:-}
     volumes:
-      - ./src:/home/site/wwwroot/src
+      - ${HOST_DATA_LAKE_PATH:-./local_data_lake}:/data/local_data_lake
+      - ./src:/app/src
+      - ./batch_launcher.py:/app/batch_launcher.py
     depends_on:
       azure-function:
         condition: service_healthy
