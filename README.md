@@ -251,6 +251,7 @@ Each file is a JSON array. Every element is one cleaned comment:
 
 ```json
 {
+  "comment_id": "UgzD8XyZw7X-4XyZw7X4AaABAQ",
   "videoId": "dQw4w9WgXcQ",
   "videoPublishedAt": "2025-01-15T18:00:00Z",
   "theme": "science documentary",
@@ -264,6 +265,7 @@ Each file is a JSON array. Every element is one cleaned comment:
 
 | Field | Type | Description |
 |---|---|---|
+| `comment_id` | `string` | Unique YouTube comment ID |
 | `videoId` | `string` | YouTube video ID |
 | `videoPublishedAt` | `string \| null` | When the **video** was published (ISO-8601) |
 | `theme` | `string \| null` | Search theme used to find the video |
