@@ -121,9 +121,13 @@ class Settings:
     # ── Azure Blob container name ─────────────────────────────────────────────
     blob_container_name: str
 
+    # ── Checkpoint tuning ─────────────────────────────────────────────────────
+    checkpoint_file_name: str
+
     # ── YouTube extraction tuning ─────────────────────────────────────────────
     global_comment_limit: int
     is_short: bool
+    max_search_results_per_theme: int
 
     # ── Batch-launcher tuning ─────────────────────────────────────────────────
     azure_function_url: str
@@ -148,6 +152,7 @@ def load_settings() -> Settings:
     azure_conn_str = _optional("AZURE_STORAGE_CONNECTION_STRING", "")
     data_lake_path = _optional("DATA_LAKE_PATH", "./local_data_lake")
     blob_container_name = _optional("BLOB_CONTAINER_NAME", "youtube-comments")
+    checkpoint_file_name = _optional("CHECKPOINT_FILE_NAME", "checkpoint.json")
 
     try:
         global_comment_limit = int(_optional("GLOBAL_COMMENT_LIMIT", "10000"))
@@ -175,8 +180,10 @@ def load_settings() -> Settings:
         upload_to_cloud=_parse_bool("UPLOAD_TO_CLOUD", True),
         data_lake_path=data_lake_path,
         blob_container_name=blob_container_name,
+        checkpoint_file_name=checkpoint_file_name,
         global_comment_limit=global_comment_limit,
         is_short=_parse_bool("IS_SHORT", True),
+        max_search_results_per_theme=int(_optional("MAX_SEARCH_RESULTS_PER_THEME", "50")),
         azure_function_url=azure_function_url,
         total_requests=total_requests,
         wait_time_seconds=wait_time_seconds,

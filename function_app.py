@@ -27,6 +27,7 @@ import azure.functions as func
 from src.config.settings import load_settings
 from src.services.youtube_service import YouTubeService
 from src.services.storage_service import StorageService
+from src.services.checkpoint_service import CheckpointService
 from src.utils.file_naming import generate_filename
 
 # ---------------------------------------------------------------------------
@@ -108,15 +109,21 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
     upload_to_cloud = _parse_bool(_get_param(req, "upload_to_cloud"), default=True)
     search_start_date = _get_param(req, "search_start_date") or _settings.search_start_date
     search_end_date = _get_param(req, "search_end_date") or _settings.search_end_date
+    
+    try:
+        max_search_results = int(_get_param(req, "max_search_results") or _settings.max_search_results_per_theme)
+    except (ValueError, TypeError):
+        max_search_results = _settings.max_search_results_per_theme
 
     logger.info(
-        "Request params | video_id=%s | theme=%s | is_short=%s | upload_to_cloud=%s | search_range=[%s, %s]",
+        "Request params | video_id=%s | theme=%s | is_short=%s | upload_to_cloud=%s | search_range=[%s, %s] | max_search=%d",
         video_id,
         theme,
         is_short,
         upload_to_cloud,
         search_start_date,
         search_end_date,
+        max_search_results,
     )
 
     # ── 2. Input validation ──────────────────────────────────────────────────
@@ -136,11 +143,16 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
     yt_service = YouTubeService(
         api_key=_settings.youtube_api_key,
         global_limit=_settings.global_comment_limit,
+        max_search_results=max_search_results,
     )
     storage_service = StorageService(
         azure_connection_string=_settings.azure_storage_connection_string,
         data_lake_path=_settings.data_lake_path,
         container_name=_settings.blob_container_name,
+    )
+    checkpoint_service = CheckpointService(
+        data_lake_path=_settings.data_lake_path,
+        filename=_settings.checkpoint_file_name,
     )
 
     try:
@@ -161,13 +173,18 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
                 )
 
         # ── 5. Extract comments ──────────────────────────────────────────────
+        checkpoints = checkpoint_service.load_checkpoints()
         comments = yt_service.fetch_comments(
             video_ids=video_ids,
             theme=theme,
             is_short=is_short,
+            checkpoints=checkpoints,
         )
 
-        # ── 6. Persist results ───────────────────────────────────────────────
+        # ── 6. Update and save checkpoints ───────────────────────────────────
+        checkpoint_service.save_checkpoints()
+
+        # ── 7. Persist results ───────────────────────────────────────────────
         timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
         filename = generate_filename(theme=theme, video_ids=video_ids, timestamp=timestamp)
 
@@ -176,7 +193,7 @@ def extract_youtube_comments(req: func.HttpRequest) -> func.HttpResponse:
         else:
             save_location = storage_service.save_locally(comments=comments, filename=filename)
 
-        # ── 7. Return structured success response ────────────────────────────
+        # ── 8. Return structured success response ────────────────────────────
         return _json_response(
             {
                 "status": "success",

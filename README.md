@@ -35,7 +35,7 @@ It is a versatile engine for building high-fidelity datasets from YouTube, enabl
 
 | Feature | Description |
 |---|---|
-| 🔍 **Smart search** | Finds videos by topic, picking a random date since Jan 2025 to maximise variety |
+| 🔍 **Smart search** | Finds videos by topic, picking a random date since Jan 2025 to maximise variety. Configurable search limit per theme. |
 | 🧹 **Text cleaning** | Strips HTML tags, entities, raw URLs, and emojis from every comment |
 | 📄 **Rich metadata** | Each comment includes author, like count, its own date, and the **video's publication date** |
 | 📦 **Dual storage** | Save JSON locally or upload to Azure Blob Storage — controlled by one flag |
@@ -173,9 +173,12 @@ All settings are read from **environment variables** — set them in your `.env`
 | `AZURE_STORAGE_CONNECTION_STRING` | Only for cloud upload | — | Azure Blob Storage connection string |
 | `DATA_LAKE_PATH` | No | `./local_data_lake` | Output directory (inside container: `/data/local_data_lake`) |
 | `BLOB_CONTAINER_NAME` | No | `youtube-comments` | Azure Blob container name |
+| `CHECKPOINT_FILE_NAME` | No | `checkpoint.json` | Name of the file used to store extraction checkpoints |
 | `GLOBAL_COMMENT_LIMIT` | No | `10000` | Max comments to collect per run |
+| `MAX_SEARCH_RESULTS_PER_THEME` | No | `50` | Maximum number of videos to search for each theme |
 | `IS_SHORT` | No | `true` | `true` = Only Shorts \| `false` = Long-form videos |
 | `UPLOAD_TO_CLOUD` | No | `false` | `true` = Upload to Azure \| `false` = Save local JSON |
+| `AZURE_FUNCTION_URL` | No | `http://localhost:7071/...` | Endpoint URL used by the batch launcher |
 | `SEARCH_START_DATE` | No | *2025-01-01* | ISO-8601 start date (e.g. `2025-01-01T00:00:00Z`) |
 | `SEARCH_END_DATE` | No | `now` | ISO-8601 end date |
 | `TOTAL_REQUESTS` | No | `2` | Number of themed requests per batch |
@@ -216,6 +219,9 @@ Parameters can be sent as a **query string** or **JSON body**:
 | `video_id` | `string` | — | Extract comments from a specific video ID |
 | `is_short` | `bool` | `false` | `true` = YouTube Shorts only |
 | `upload_to_cloud` | `bool` | `true` | `false` = save locally; `true` = Azure Blob |
+| `max_search_results` | `int` | `50` | Max videos to search for this request (overrides global setting) |
+| `search_start_date` | `string` | — | ISO-8601 start date override |
+| `search_end_date` | `string` | — | ISO-8601 end date override |
 
 > Provide either `theme` **or** `video_id` (not necessarily both).
 

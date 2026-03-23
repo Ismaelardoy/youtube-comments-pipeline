@@ -28,9 +28,10 @@ services:
       SEARCH_START_DATE: ${SEARCH_START_DATE:-}
       SEARCH_END_DATE: ${SEARCH_END_DATE:-}
     volumes:
-      # Bind-mount: HOST_DATA_LAKE_PATH (default: ./local_data_lake) → /data/local_data_lake
-      # Files written by the function appear directly in your project folder.
       - ${HOST_DATA_LAKE_PATH:-./local_data_lake}:/data/local_data_lake
+      # Montamos el código fuente para que los cambios se vean sin reconstruir la imagen
+      - ./src:/home/site/wwwroot/src
+      - ./function_app.py:/home/site/wwwroot/function_app.py
     healthcheck:
       test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://localhost:80/api/extract_youtube_comments"]
       interval: 10s
@@ -60,6 +61,8 @@ services:
       UPLOAD_TO_CLOUD: ${UPLOAD_TO_CLOUD:-false}
       SEARCH_START_DATE: ${SEARCH_START_DATE:-}
       SEARCH_END_DATE: ${SEARCH_END_DATE:-}
+    volumes:
+      - ./src:/home/site/wwwroot/src
     depends_on:
       azure-function:
         condition: service_healthy

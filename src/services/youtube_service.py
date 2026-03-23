@@ -69,9 +69,10 @@ class YouTubeService:
     _MAX_SEARCH_RESULTS = 50
     _MAX_COMMENTS_PER_PAGE = 100
 
-    def __init__(self, api_key: str, global_limit: int = 10_000) -> None:
+    def __init__(self, api_key: str, global_limit: int = 10_000, max_search_results: int = 50) -> None:
         self._api_key = api_key
         self._global_limit = global_limit
+        self._max_search_results = max_search_results
         self._client = build("youtube", "v3", developerKey=api_key)
         logger.info("YouTubeService initialised | global_limit=%d", global_limit)
 
@@ -122,16 +123,31 @@ class YouTubeService:
             published_before or "now",
         )
 
-        response = self._execute_search(
-            q=search_query,
-            video_duration=video_duration,
-            published_after=published_after,
-            published_before=published_before,
-        )
+        video_ids: list[str] = []
+        next_page_token: Optional[str] = None
 
-        items = response.get("items", [])
-        video_ids: list[str] = [item["id"]["videoId"] for item in items]
-        logger.info("Search returned %d video(s)", len(video_ids))
+        while len(video_ids) < self._max_search_results:
+            response = self._execute_search(
+                q=search_query,
+                video_duration=video_duration,
+                published_after=published_after,
+                published_before=published_before,
+                page_token=next_page_token,
+            )
+
+            items = response.get("items", [])
+            page_ids = [item["id"]["videoId"] for item in items]
+            video_ids.extend(page_ids)
+            
+            logger.info("Search page returned %d video(s) | accumulated=%d", len(page_ids), len(video_ids))
+            
+            next_page_token = response.get("nextPageToken")
+            if not next_page_token:
+                break
+
+        # Trim to exact requested limit
+        video_ids = video_ids[:self._max_search_results]
+        logger.info("Search complete | total=%d video(s)", len(video_ids))
         return video_ids
 
     def get_video_publish_dates(self, video_ids: list[str]) -> dict[str, Optional[str]]:
@@ -171,6 +187,7 @@ class YouTubeService:
         theme: Optional[str],
         is_short: bool,
         video_publish_dates: Optional[dict[str, Optional[str]]] = None,
+        checkpoints: Optional[dict[str, dict]] = None,
     ) -> list[CommentRecord]:
         """Fetch cleaned top-level comments from a list of YouTube video IDs.
 
@@ -187,6 +204,8 @@ class YouTubeService:
             video_publish_dates: Optional pre-fetched mapping of video ID to
                 publication date.  When ``None``, dates are fetched
                 automatically via :meth:`get_video_publish_dates`.
+            checkpoints: Optional dictionary of checkpoints per video ID.
+                Used to skip already processed comments and save quota.
 
         Returns:
             A list of :class:`~src.models.comment.CommentRecord` dicts,
@@ -196,6 +215,7 @@ class YouTubeService:
             video_publish_dates = self.get_video_publish_dates(video_ids)
 
         comments: list[CommentRecord] = []
+        seen_ids: set[str] = set()
 
         for v_id in video_ids:
             if len(comments) >= self._global_limit:
@@ -214,6 +234,8 @@ class YouTubeService:
                     is_short=is_short,
                     video_published_at=video_publish_dates.get(v_id),
                     comments=comments,
+                    seen_ids=seen_ids,
+                    checkpoint=checkpoints.setdefault(v_id, {}) if checkpoints is not None else None,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
@@ -237,6 +259,7 @@ class YouTubeService:
         video_duration: str,
         published_after: str,
         published_before: Optional[str] = None,
+        page_token: Optional[str] = None,
     ) -> dict:
         """Execute a YouTube search.list call with retry logic."""
         params = {
@@ -246,10 +269,12 @@ class YouTubeService:
             "videoDuration": video_duration,
             "relevanceLanguage": "en",
             "publishedAfter": published_after,
-            "maxResults": self._MAX_SEARCH_RESULTS,
+            "maxResults": min(50, self._max_search_results), # API maximum per page
         }
         if published_before:
             params["publishedBefore"] = published_before
+        if page_token:
+            params["pageToken"] = page_token
 
         request = self._client.search().list(**params)
         return request.execute()
@@ -261,22 +286,55 @@ class YouTubeService:
         is_short: bool,
         video_published_at: Optional[str],
         comments: list[CommentRecord],
+        seen_ids: set[str],
+        checkpoint: Optional[dict] = None,
     ) -> None:
         """Paginate through a single video's comment threads, appending to *comments* in-place."""
-        request = self._client.commentThreads().list(
-            part="snippet",
-            videoId=v_id,
-            maxResults=self._MAX_COMMENTS_PER_PAGE,
-        )
+        last_comment_id = checkpoint.get("last_comment_id") if checkpoint else None
+        last_published_at = checkpoint.get("last_published_at") if checkpoint else None
+
+        params = {
+            "part": "snippet",
+            "videoId": v_id,
+            "maxResults": self._MAX_COMMENTS_PER_PAGE,
+            "order": "time",  # Ensure we get the most recent first for incremental logic
+        }
+
+        # If we have a checkpoint with a date, use it to filter the API request
+        # NOTE: YouTube API publishedAfter is exclusive, so it might skip some comments 
+        # that arrived at the exact same time. It's safer for quota but might miss edge cases.
+        if last_published_at:
+            params["publishedAfter"] = last_published_at
+
+        request = self._client.commentThreads().list(**params)
+        
+        skipped_count = 0
+        new_last_comment_id = None
+        new_last_published_at = None
 
         while request is not None and len(comments) < self._global_limit:
             response = self._execute_comment_page(request)
 
-            for item in response.get("items", []):
+            items = response.get("items", [])
+            for item in items:
                 if len(comments) >= self._global_limit:
                     break
 
+                comment_id = item["id"]
                 snippet = item["snippet"]["topLevelComment"]["snippet"]
+                published_at = snippet.get("publishedAt")
+
+                # Early exit if we hit the last seen comment ID or an older date
+                if comment_id == last_comment_id or (last_published_at and published_at and published_at <= last_published_at):
+                    logger.info("Reached existing comments for video %s — stopping pagination.", v_id)
+                    request = None # Break outer loop
+                    break
+
+                # In-memory deduplication for the current session
+                if comment_id in seen_ids:
+                    skipped_count += 1
+                    continue
+
                 raw_text: str = snippet.get("textDisplay", "")
                 cleaned_text = clean_comment_text(raw_text)
 
@@ -284,6 +342,7 @@ class YouTubeService:
                     continue
 
                 record: CommentRecord = {
+                    "comment_id": comment_id,
                     "videoId": v_id,
                     "videoPublishedAt": video_published_at,
                     "theme": theme,
@@ -291,9 +350,19 @@ class YouTubeService:
                     "author": snippet.get("authorDisplayName"),
                     "text": cleaned_text,
                     "likeCount": int(snippet.get("likeCount", 0)),
-                    "publishedAt": snippet.get("publishedAt"),
+                    "publishedAt": published_at,
                 }
                 comments.append(record)
+                seen_ids.add(comment_id)
+                
+                # Update high-water marks for checkpointing
+                if not new_last_comment_id:
+                    new_last_comment_id = comment_id
+                if not new_last_published_at or (published_at and published_at > new_last_published_at):
+                    new_last_published_at = published_at
+
+            if request is None: # Early exit was triggered
+                break
 
             # Pagination
             if "nextPageToken" in response and len(comments) < self._global_limit:
@@ -303,6 +372,18 @@ class YouTubeService:
                 )
             else:
                 break
+        
+        if skipped_count > 0:
+            logger.info("Saltando %d comentarios ya existentes para el vídeo %s", skipped_count, v_id)
+
+        # Update checkpoint in the passed dictionary if applicable
+        if checkpoint is not None and new_last_comment_id:
+            checkpoint["last_comment_id"] = new_last_comment_id
+            checkpoint["last_published_at"] = new_last_published_at
+        elif checkpoint is None and new_last_comment_id:
+            # If no checkpoint was passed, we might still want to track it somewhere?
+            # For now, we rely on the caller passing a dict to be updated.
+            pass
 
     @_youtube_retry
     def _execute_comment_page(self, request) -> dict:  # type: ignore[return]

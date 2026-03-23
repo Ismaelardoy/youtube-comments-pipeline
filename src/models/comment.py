@@ -22,6 +22,9 @@ class CommentRecord(TypedDict):
     because the API may omit them for certain comment types.
     """
 
+    comment_id: str
+    """Unique ID of the YouTube comment."""
+
     videoId: str
     """YouTube video ID from which this comment was collected."""
 
